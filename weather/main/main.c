@@ -1,3 +1,4 @@
+#include "bme280.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/i2c_slave.h"
@@ -21,11 +22,9 @@
 #include "led_strip_rmt.h"
 #include "led_strip_types.h"
 #include "portmacro.h"
-#include "sdkconfig.h"
 #include "soc/clk_tree_defs.h"
 #include "soc/gpio_num.h"
 #include "stdint.h"
-#include "wifi_provisioning/wifi_scan.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -34,117 +33,6 @@ static temperature_sensor_handle_t temp_handle;
 
 static i2c_master_bus_handle_t i2c_bus_handle;
 static i2c_master_dev_handle_t i2c_bme280_handle;
-
-typedef enum bme280_mode_t {
-  /** Sensor does no measurements. */
-  BME280_MODE_SLEEP = 0,
-  /** Sensor is in a forced measurement cycle. Sleeps after finishing. */
-  BME280_MODE_FORCE = 1,
-  /** Sensor does measurements. Never sleeps. */
-  BME280_MODE_CYCLE = 3,
-} bme280_mode_t;
-
-const char *bme280mode_to_string(enum bme280_mode_t mode) {
-  switch (mode) {
-  case BME280_MODE_SLEEP:
-    return "BME280_MODE_SLEEP";
-  case BME280_MODE_FORCE:
-    return "BME280_MODE_FORCE";
-  case BME280_MODE_CYCLE:
-    return "BME280_MODE_CYCLE";
-  }
-  return "UNKNOWN";
-}
-
-typedef enum bme280_tsmpl_t {
-  bme280_TEMPERATURE_OVERSAMPLING_NONE = 0x0,
-  bme280_TEMPERATURE_OVERSAMPLING_X1,
-  bme280_TEMPERATURE_OVERSAMPLING_X2,
-  bme280_TEMPERATURE_OVERSAMPLING_X4,
-  bme280_TEMPERATURE_OVERSAMPLING_X8,
-  bme280_TEMPERATURE_OVERSAMPLING_X16,
-} bme280_tsmpl_t;
-
-typedef enum bme280_psmpl_t {
-  bme280_PRESSURE_OVERSAMPLING_NONE = 0x0,
-  bme280_PRESSURE_OVERSAMPLING_X1,
-  bme280_PRESSURE_OVERSAMPLING_X2,
-  bme280_PRESSURE_OVERSAMPLING_X4,
-  bme280_PRESSURE_OVERSAMPLING_X8,
-  bme280_PRESSURE_OVERSAMPLING_X16,
-} bme280_psmpl_t;
-
-typedef enum bme280_hsmpl_t {
-  bme280_HUMIDITY_OVERSAMPLING_NONE = 0x0,
-  bme280_HUMIDITY_OVERSAMPLING_X1,
-  bme280_HUMIDITY_OVERSAMPLING_X2,
-  bme280_HUMIDITY_OVERSAMPLING_X4,
-  bme280_HUMIDITY_OVERSAMPLING_X8,
-  bme280_HUMIDITY_OVERSAMPLING_X16,
-} bme280_hsmpl_t;
-
-typedef enum bme280_tstby_t {
-  bme280_STANDBY_0M5 = 0x0,
-  bme280_STANDBY_62M5,
-  bme280_STANDBY_125M,
-  bme280_STANDBY_250M,
-  bme280_STANDBY_500M,
-  bme280_STANDBY_1000M,
-  BME280_STANDBY_10M,
-  BME280_STANDBY_20M,
-  BMP280_STANDBY_2000M = BME280_STANDBY_10M,
-  BMP280_STANDBY_4000M = BME280_STANDBY_20M,
-} bme280_tstby_t;
-
-typedef enum bme280_iirf_t {
-  bme280_IIR_NONE = 0x0,
-  bme280_IIR_X2,
-  bme280_IIR_X4,
-  bme280_IIR_X8,
-  bme280_IIR_X16,
-} bme280_iirf_t;
-
-typedef struct bme280_config_t {
-  bme280_tsmpl_t t_sampling;
-  bme280_psmpl_t p_sampling;
-  bme280_tstby_t t_standby;
-  bme280_iirf_t iir_filter;
-  bme280_hsmpl_t h_sampling;
-  bme280_mode_t mode;
-} bme280_config_t;
-
-#define bme280_DEFAULT_TEMPERATURE_OVERSAMPLING                                \
-  bme280_TEMPERATURE_OVERSAMPLING_X16
-#define bme280_DEFAULT_PRESSURE_OVERSAMPLING bme280_PRESSURE_OVERSAMPLING_X16
-#define bme280_DEFAULT_STANDBY BME280_STANDBY_20M
-#define bme280_DEFAULT_IIR bme280_IIR_X16
-#define bme280_DEFAULT_HUMIDITY_OVERSAMPLING bme280_HUMIDITY_OVERSAMPLING_X16
-#define bme280_DEFAULT_CONFIG                                                  \
-  ((bme280_config_t){bme280_DEFAULT_TEMPERATURE_OVERSAMPLING,                  \
-                     bme280_DEFAULT_PRESSURE_OVERSAMPLING,                     \
-                     bme280_DEFAULT_STANDBY, bme280_DEFAULT_IIR,               \
-                     bme280_DEFAULT_HUMIDITY_OVERSAMPLING})
-
-struct bme280_calib_data {
-  uint16_t T1;
-  int16_t T2;
-  int16_t T3;
-  uint16_t P1;
-  int16_t P2;
-  int16_t P3;
-  int16_t P4;
-  int16_t P5;
-  int16_t P6;
-  int16_t P7;
-  int16_t P8;
-  int16_t P9;
-  uint8_t H1;
-  int16_t H2;
-  uint8_t H3;
-  int16_t H4;
-  int16_t H5;
-  int8_t H6;
-} calib_data;
 
 esp_err_t bme280_write_register(uint8_t reg, uint8_t data) {
   uint8_t write_buf[2] = {reg, data};
@@ -503,70 +391,6 @@ void loop(void) {
       ESP_LOGI("MAIN.BME280", "error: %s", esp_err_to_name(err));
     }
     ESP_LOGI("MAIN.BME280", "mode %s", bme280mode_to_string(mode));
-
-    // uint8_t cur_r = prev_color[0], cur_g = prev_color[1], cur_b =
-    // prev_color[2]; uint8_t max_value = 15;
-    //
-    // uint8_t target_r =
-    //     scale_value((double)esp_random() / UINT_MAX, 0, 1, 1, max_value);
-    // uint8_t target_g =
-    //     scale_value((double)esp_random() / UINT_MAX, 0, 1, 1, max_value);
-    // uint8_t target_b =
-    //     scale_value((double)esp_random() / UINT_MAX, 0, 1, 1, max_value);
-    //
-    // ESP_LOGI("MAIN.RGB", "value: %f, %f, %f", (double)target_r,
-    //          (double)target_g, (double)target_b);
-    //
-    // for (float t = 0; t <= 1; t += 0.01) {
-    //
-    //   cur_r = lerp_int(cur_r, target_r, t);
-    //   cur_g = lerp_int(cur_g, target_g, t);
-    //   cur_b = lerp_int(cur_b, target_b, t);
-    //
-    //   led_strip_set_pixel(strip_handle, 0, cur_r, cur_g, cur_b);
-    //   led_strip_refresh(strip_handle);
-    //   vTaskDelay(10 / portTICK_PERIOD_MS);
-    // }
-    //
-    // ESP_LOGI(TAG, "LED iter i: %d", i);
-
-    // prev_color[0] = cur_r;
-    // prev_color[1] = cur_g;
-    // prev_color[2] = cur_b;
-    //
-    // led_state = !led_state;
-
-    // Temp sensor
-    // float temp_c;
-    // esp_err_t temp_err;
-    // temp_err = temperature_sensor_get_celsius(temp_handle, &temp_c);
-    // if (temp_err != 0) {
-    //   ESP_LOGW("MAIN.TEMP", "Temp sensor err: %d", temp_err);
-    // } else {
-    //   ESP_LOGI("MAIN.TEMP", "Temp sensor: %f", temp_c);
-    // }
-    // // ESP_ERROR_CHECK_WITHOUT_ABORT(x)
-    //
-    // gpio_set_level(GPIO_NUM_38, 1);
-    // ESP_LOGI("EXT.LED", "Turned ON");
-    // vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // gpio_set_level(GPIO_NUM_38, 0);
-    // ESP_LOGI("EXT.LED", "Turned OFF");
-
-    // for (uint8_t addr = 3; addr < 0x80; addr++) {
-    //   ESP_LOGI("MAIN.I2C", "Scanning address: %x", addr);
-    //   esp_err_t probe_err;
-    //   probe_err = i2c_master_probe(i2c_master_handle, addr, 1000);
-    //   if (probe_err == ESP_OK) {
-    //     ESP_LOGI("MAIN.I2C", "Device found at %x", addr);
-    //     break;
-    //   } else {
-    //     ESP_LOGI("MAIN.I2C", "Device not found, err: %s",
-    //              esp_err_to_name(probe_err));
-    //   }
-    //
-    //   vTaskDelay(20 / portTICK_PERIOD_MS);
-    // }
   }
 }
 
