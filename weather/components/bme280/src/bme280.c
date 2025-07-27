@@ -222,6 +222,7 @@ int32_t bme280_compensate_T_int32(bme280_handle *handle, int32_t adc_T) {
   return T;
 }
 
+// Should be divided by 100 to get temperature in degrees Celsius
 esp_err_t bme280_read_temp(const bme280_handle *handle, int32_t *temp) {
   uint8_t temp_raw_buf[3];
 
@@ -269,6 +270,7 @@ uint32_t bme280_compensate_H_int32(const bme280_handle *handle, int32_t adc_H) {
   return (uint32_t)(v_x1_u32r >> 12);
 }
 
+// Should be divided by 1024 to get % relative humidity
 esp_err_t bme280_read_hum(const bme280_handle *handle, int32_t *hum) {
   uint8_t hum_raw_buf[2];
 
@@ -320,6 +322,7 @@ uint32_t bme280_compensate_P_int32(const bme280_handle *handle, int32_t adc_P) {
   return p;
 }
 
+// Returns pressure in Pascals
 esp_err_t bme280_read_pres(const bme280_handle *handle, int32_t *pres) {
   uint8_t pres_raw_buf[3];
 
