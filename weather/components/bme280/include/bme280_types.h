@@ -53,7 +53,11 @@ typedef enum {
   /**
    * @brief Start address of the temperature measurement data (MSB, LSB, XLSB).
    */
-  BME280_REG_TEMP_MSB = 0xFA
+  BME280_REG_TEMP_MSB = 0xFA,
+
+  BME280_REG_HUM_MSB = 0xFD,
+
+  BME280_REG_PRES_MSB = 0xF7
 
 } bme280_reg_t;
 
@@ -171,6 +175,7 @@ typedef struct bme280_calib_data {
 typedef struct bme280_handle {
   i2c_master_dev_handle_t i2c_handle;
   bme280_calib_data calib_data;
+  int32_t t_fine;
 } bme280_handle;
 
 #endif

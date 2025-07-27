@@ -98,7 +98,21 @@ void loop(void) {
     if (err != 0) {
       ESP_LOGI("MAIN.BME280", "error: %s", esp_err_to_name(err));
     }
-    ESP_LOGI("MAIN.BME280", "temp: %d", (int)temp);
+    ESP_LOGI("MAIN.BME280", "temp: %.2f C", (float)temp / 100);
+
+    int32_t hum;
+    err = bme280_read_hum(&bme_handle, &hum);
+    if (err != 0) {
+      ESP_LOGI("MAIN.BME280", "error: %s", esp_err_to_name(err));
+    }
+    ESP_LOGI("MAIN.BME280", "hum: %.2f%%", (float)hum / 1024);
+
+    int32_t pres;
+    err = bme280_read_pres(&bme_handle, &pres);
+    if (err != 0) {
+      ESP_LOGI("MAIN.BME280", "error: %s", esp_err_to_name(err));
+    }
+    ESP_LOGI("MAIN.BME280", "pres: %.2f hPa", (float)pres / 100);
   }
 }
 

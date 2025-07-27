@@ -205,7 +205,8 @@ esp_err_t bme280_set_mode(const bme280_handle *handle, bme280_mode_t mode) {
   return ESP_OK;
 }
 
-int32_t BME280_compensate_T_int32(const bme280_handle *handle, int32_t adc_T) {
+// Low precision(32 bits) temperature compensation
+int32_t bme280_compensate_T_int32(bme280_handle *handle, int32_t adc_T) {
   int32_t var1, var2, T;
   var1 = ((((adc_T >> 3) - ((int32_t)handle->calib_data.T1 << 1))) *
           ((int32_t)handle->calib_data.T2)) >>
@@ -216,12 +217,12 @@ int32_t BME280_compensate_T_int32(const bme280_handle *handle, int32_t adc_T) {
           ((int32_t)handle->calib_data.T3)) >>
          14;
   int32_t t_fine = var1 + var2;
+  handle->t_fine = t_fine;
   T = (t_fine * 5 + 128) >> 8;
   return T;
 }
 
 esp_err_t bme280_read_temp(const bme280_handle *handle, int32_t *temp) {
-
   uint8_t temp_raw_buf[3];
 
   esp_err_t err = bme280_read_registers(handle, BME280_REG_TEMP_MSB,
@@ -233,17 +234,104 @@ esp_err_t bme280_read_temp(const bme280_handle *handle, int32_t *temp) {
   int32_t t_raw =
       (temp_raw_buf[0] << 12) | (temp_raw_buf[1] << 4) | (temp_raw_buf[2] >> 4);
 
-  int32_t t_calib = BME280_compensate_T_int32(handle, t_raw);
+  int32_t t_calib = bme280_compensate_T_int32(handle, t_raw);
 
   *temp = t_calib;
 
   return ESP_OK;
 }
+
+uint32_t bme280_compensate_H_int32(const bme280_handle *handle, int32_t adc_H) {
+  int32_t v_x1_u32r;
+
+  // abomination
+  v_x1_u32r = (handle->t_fine - ((int32_t)76800));
+  v_x1_u32r = (((((adc_H << 14) - (((int32_t)handle->calib_data.H4) << 20) -
+                  (((int32_t)handle->calib_data.H5) * v_x1_u32r)) +
+                 ((int32_t)16384)) >>
+                15) *
+               (((((((v_x1_u32r * ((int32_t)handle->calib_data.H6)) >> 10) *
+                    (((v_x1_u32r * ((int32_t)handle->calib_data.H3)) >> 11) +
+                     ((int32_t)32768))) >>
+                   10) +
+                  ((int32_t)2097152)) *
+                     ((int32_t)handle->calib_data.H2) +
+                 8192) >>
+                14));
+
+  v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
+                             ((int32_t)handle->calib_data.H1)) >>
+                            4));
+
+  v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
+  v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
+
+  return (uint32_t)(v_x1_u32r >> 12);
+}
+
 esp_err_t bme280_read_hum(const bme280_handle *handle, int32_t *hum) {
+  uint8_t hum_raw_buf[2];
+
+  esp_err_t err = bme280_read_registers(handle, BME280_REG_HUM_MSB, hum_raw_buf,
+                                        sizeof(hum_raw_buf));
+  if (err)
+    return err;
+
+  int32_t h_raw = (hum_raw_buf[0] << 8) | (hum_raw_buf[1] << 8);
+
+  *hum = (int32_t)bme280_compensate_H_int32(handle, h_raw);
 
   return ESP_OK;
 }
+
+// Low precision(32 bit) pressure compensation
+uint32_t bme280_compensate_P_int32(const bme280_handle *handle, int32_t adc_P) {
+  int32_t var1, var2;
+  uint32_t p;
+
+  var1 = ((handle->t_fine) >> 1) - (int32_t)(64000);
+  var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * ((int32_t)handle->calib_data.P6);
+  var2 = var2 + ((var1 * ((int32_t)handle->calib_data.P5)) << 1);
+  var2 = (var2 >> 2) + (((int32_t)handle->calib_data.P4) << 16);
+  var1 = (((handle->calib_data.P3 * (((var1 >> 2) * (var1 >> 2)) >> 13)) >> 3) +
+          ((((int32_t)handle->calib_data.P2) * var1) >> 1)) >>
+         18;
+  var1 = ((((32768 + var1)) * ((int32_t)handle->calib_data.P1)) >> 15);
+
+  if (var1 == 0) {
+    return 0; // avoid exception caused by division by zero
+  }
+
+  p = (((uint32_t)(((int32_t)1048576) - adc_P) - (var2 >> 12))) * 3125;
+  if (p < 0x80000000) {
+    p = (p << 1) / ((uint32_t)var1);
+  } else {
+    p = (p / (uint32_t)var1) * 2;
+  }
+
+  var1 = (((int32_t)handle->calib_data.P9) *
+          ((int32_t)(((p >> 3) * (p >> 3)) >> 13))) >>
+         12;
+
+  var2 = (((int32_t)(p >> 2)) * ((int32_t)handle->calib_data.P8)) >> 13;
+
+  p = (uint32_t)((int32_t)p + ((var1 + var2 + handle->calib_data.P7) >> 4));
+
+  return p;
+}
+
 esp_err_t bme280_read_pres(const bme280_handle *handle, int32_t *pres) {
+  uint8_t pres_raw_buf[3];
+
+  esp_err_t err = bme280_read_registers(handle, BME280_REG_PRES_MSB,
+                                        pres_raw_buf, sizeof(pres_raw_buf));
+  if (err)
+    return err;
+
+  int32_t p_raw =
+      (pres_raw_buf[0] << 12) | (pres_raw_buf[1] << 4) | (pres_raw_buf[2] >> 4);
+
+  *pres = (int32_t)bme280_compensate_P_int32(handle, p_raw);
 
   return ESP_OK;
 }
@@ -252,26 +340,3 @@ esp_err_t bme280_read_all(const bme280_handle *handle, int32_t *temp,
 
   return ESP_OK;
 }
-
-// uint32_t bme280_compensate_H_int32(int32_t adc_H) {
-//   int32_t v_x1_u32r;
-//   v_x1_u32r = (bmx280->t_fine - ((int32_t)76800));
-//   v_x1_u32r = (((((adc_H << 14) - (((int32_t)bmx280->cmps.H4) << 20) -
-//                   (((int32_t)bmx280->cmps.H5) * v_x1_u32r)) +
-//                  ((int32_t)16384)) >>
-//                 15) *
-//                (((((((v_x1_u32r * ((int32_t)bmx280->cmps.H6)) >> 10) *
-//                     (((v_x1_u32r * ((int32_t)bmx280->cmps.H3)) >> 11) +
-//                      ((int32_t)32768))) >>
-//                    10) +
-//                   ((int32_t)2097152)) *
-//                      ((int32_t)bmx280->cmps.H2) +
-//                  8192) >>
-//                 14));
-//   v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
-//                              ((int32_t)bmx280->cmps.H1)) >>
-//                             4));
-//   v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
-//   v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
-//   return (uint32_t)(v_x1_u32r >> 12);
-// }
