@@ -335,8 +335,28 @@ esp_err_t bme280_read_pres(const bme280_handle *handle, int32_t *pres) {
 
   return ESP_OK;
 }
+
+// Burst read(most efficient)
 esp_err_t bme280_read_all(const bme280_handle *handle, int32_t *temp,
                           int32_t *hum, int32_t *pres) {
+
+  uint8_t raw_data_buf[8];
+  esp_err_t err = bme280_read_registers(handle, BME280_REG_PRES_MSB,
+                                        raw_data_buf, sizeof(raw_data_buf));
+  if (err)
+    return err;
+
+  // Temp should be first to calculate t_fine
+  int32_t t_raw =
+      (raw_data_buf[3] << 12) | (raw_data_buf[4] << 4) | (raw_data_buf[5] >> 4);
+  *temp = bme280_compensate_T_int32(handle, t_raw);
+
+  int32_t p_raw =
+      (raw_data_buf[0] << 12) | (raw_data_buf[1] << 4) | (raw_data_buf[2] >> 4);
+  *pres = (int32_t)bme280_compensate_P_int32(handle, p_raw);
+
+  int32_t h_raw = (raw_data_buf[6] << 8) | (raw_data_buf[7] << 8);
+  *hum = (int32_t)bme280_compensate_H_int32(handle, h_raw);
 
   return ESP_OK;
 }
