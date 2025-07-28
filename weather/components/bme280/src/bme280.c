@@ -133,6 +133,8 @@ esp_err_t bme280_handle_free(bme280_handle *handle) {
   esp_err_t err = i2c_master_bus_rm_device(handle->i2c_handle);
   if (err)
     return err;
+
+  return ESP_OK;
 }
 
 esp_err_t bme280_configure(const bme280_handle *handle, bme280_config_t *cfg) {
