@@ -113,15 +113,26 @@ esp_err_t bme280_handle_init(bme280_handle *handle,
 
   err = bme280_reset(handle);
   if (err) {
+    i2c_master_bus_rm_device(handle->i2c_handle);
     return err;
   }
 
   err = bme280_calibrate(handle);
   if (err) {
+    i2c_master_bus_rm_device(handle->i2c_handle);
     return err;
   }
 
   return ESP_OK;
+}
+
+esp_err_t bme280_handle_free(bme280_handle *handle) {
+  if (handle == NULL || handle->i2c_handle == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  esp_err_t err = i2c_master_bus_rm_device(handle->i2c_handle);
+  if (err)
+    return err;
 }
 
 esp_err_t bme280_configure(const bme280_handle *handle, bme280_config_t *cfg) {

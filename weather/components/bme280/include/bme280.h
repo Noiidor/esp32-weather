@@ -7,6 +7,7 @@
 
 esp_err_t bme280_handle_init(bme280_handle *handle,
                              i2c_master_bus_handle_t bus_handle);
+esp_err_t bme280_handle_free(bme280_handle *handle);
 
 esp_err_t bme280_read_temp(const bme280_handle *handle, int32_t *temp);
 esp_err_t bme280_read_hum(const bme280_handle *handle, int32_t *hum);
