@@ -3,11 +3,17 @@
 #include "driver/i2c_master.h"
 #include "driver/i2c_types.h"
 #include "driver/temperature_sensor.h"
+#include "driver/uart.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_log_buffer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/projdefs.h"
 #include "freertos/task.h"
+#include "hal/gpio_types.h"
 #include "hal/i2c_types.h"
+#include "hal/uart_types.h"
+#include "hc8.h"
 #include "led_strip.h"
 #include "led_strip_rmt.h"
 #include "led_strip_types.h"
@@ -73,15 +79,20 @@ static void setup(void) {
   bme_cfg.mode = BME280_MODE_CYCLE;
 
   ESP_ERROR_CHECK(bme280_configure(&bme_handle, &bme_cfg));
+
+  ESP_LOGI("SETUP", "Configuring UART");
+
+  ESP_ERROR_CHECK(hc8_init(UART_NUM_1, GPIO_NUM_17, GPIO_NUM_18));
 }
 
 void loop(void) {
   while (1) {
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
     int light = 0;
     esp_err_t err;
     uint8_t addr = 0x76;
-    err = i2c_master_probe(i2c_bus_handle, addr, 1000);
+    err = i2c_master_probe(i2c_bus_handle, addr, -1);
     if (err != 0) {
       ESP_LOGI("MAIN.I2C", "error: %s", esp_err_to_name(err));
     } else {
@@ -90,8 +101,6 @@ void loop(void) {
 
     led_strip_set_pixel(strip_handle, 0, light, light, light);
     led_strip_refresh(strip_handle);
-
-    vTaskDelay(500 / portTICK_PERIOD_MS);
 
     int32_t temp;
     int32_t hum;
@@ -104,6 +113,13 @@ void loop(void) {
     ESP_LOGI("MAIN.BME280", "temp: %.2f C", (float)temp / 100);
     ESP_LOGI("MAIN.BME280", "hum: %.2f%%", (float)hum / 1024);
     ESP_LOGI("MAIN.BME280", "pres: %.2f hPa", (float)pres / 100);
+
+    int ppm;
+    err = hc8_query_co2(&ppm);
+    if (err) {
+      ESP_LOGI("MAIN.HC8", "error: %s", esp_err_to_name(err));
+    }
+    ESP_LOGI("MAIN.HC8", "PPM: %d", ppm);
   }
 }
 

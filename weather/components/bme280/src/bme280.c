@@ -33,7 +33,7 @@ esp_err_t bme280_reset(const bme280_handle *handle) {
   esp_err_t err =
       bme280_write_register(handle, BME280_REG_RESET, BME280_RESET_BYTE);
 
-  vTaskDelay(pdTICKS_TO_MS(10));
+  vTaskDelay(pdMS_TO_TICKS(10));
 
   return err;
 }
